@@ -250,7 +250,7 @@ long get_wait_time(struct sock *sk){
          * Else, we calculate the time in queue as 
          * inverse of rate of completion
          */
-         timeInQueue = samplingTime / dequeuedBytes;
+         timeInQueue = (samplingTime / dequeuedBytes) * packets_in_queue;
     
         //printk(KERN_INFO "Previous values for path index %u: PacketsInQueue: %u, QueueTime: %li, CompBytes: %u, SampleTime: %u, timeInQueue:%li\n", tp->mptcp->path_index, packets_in_queue, queueTime[tp->mptcp->path_index - 1], compBytes[tp->mptcp->path_index - 1], sampleTime[tp->mptcp->path_index - 1], timeInQueue);
 
@@ -291,15 +291,15 @@ static struct sock
 {
 	struct sock *bestsk = NULL;
 	//u32 min_srtt = 0xffffffff;
-    u32 min_service = 0xffffffff;
-    u32 curr_service = 0xffffffff;
-    long wait_time = 0;
+    	u32 min_service = 0xffffffff;
+    	u32 curr_service = 0xffffffff;
+    	long wait_time = 0;
 	bool found_unused = false;
 	bool found_unused_una = false;
 	struct sock *sk;
-    u32 qSize;
+    	u32 qSize;
 
-    mptcp_for_each_sk(mpcb, sk) {   //use path_index as id
+    	mptcp_for_each_sk(mpcb, sk) {   //use path_index as id
 		struct tcp_sock *tp = tcp_sk(sk);
 		bool unused = false;
         
@@ -344,12 +344,14 @@ static struct sock
          * needs to be selected
          */
         qSize = get_queue_size(sk);
+	wait_time = qSize;
         wait_time = get_wait_time(sk); //send sk and qSize
-        curr_service = qSize * (tp->srtt_us - (wait_time/1000));
+        curr_service = qSize * (tp->srtt_us - (wait_time/10000000)); //convert wait time to srtt time units
 
-        //printk(KERN_INFO "Path Index: %u, SRTT: %u, Wait Time: %li, WDiv1000: %li, Queue Size: %u, Service Time: %u", tp->mptcp->path_index, tp->srtt_us, wait_time, wait_time/1000, qSize, curr_service);
+        //printk(KERN_INFO "Path Index: %u, SRTT: %u, Wait Time: %li, WDiv10^7: %li, Queue Size: %u, Service Time: %u", tp->mptcp->path_index, tp->srtt_us, wait_time, wait_time/10000000, qSize, curr_service);
+	
+	//curr_service = qSize;
 
-        //
         /* SRTT switcher
 		if (tp->srtt_us < min_srtt) {
 			min_srtt = tp->srtt_us;
@@ -382,7 +384,7 @@ static struct sock
 		else
 			*force = false;
 	}
-
+	//printk(KERN_INFO "Subflow chosen over index %u", tcp_sk(bestsk)->mptcp->path_index);
 	return bestsk;
 }
 
@@ -571,7 +573,6 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
 	struct tcp_sock *subtp;
 	u16 gso_max_segs;
 	u32 max_len, max_segs, window, needed;
-    struct dst_entry *dst;
 
 	/* As we set it, we have to reset it as well. */
 	*limit = 0;
@@ -597,7 +598,7 @@ static struct sk_buff *mptcp_next_segment(struct sock *meta_sk,
     //////////////////////////////////////////////////////////////////////////////
     // Addition: Add code to print to dmesg as SK has been selected by this point
     // Print: selected SK name (dev value), CWND, SRTT, RTT
-    dst = sk_dst_get(*subsk);
+    //dst = sk_dst_get(*subsk);
     
     //printk(KERN_ERR "MPTCP: This is the original entry point!");
     //printk(KERN_INFO "Socket is selected. Devname: %s, CWND: %u, RTT: %lu, Jiffies: %lu, SRTT: %lu", dst->dev->name, subtp->snd_cwnd, (unsigned long)subtp->rcv_rtt_est.rtt, usecs_to_jiffies(subtp->rcv_rtt_est.rtt), usecs_to_jiffies(subtp->srtt_us));
